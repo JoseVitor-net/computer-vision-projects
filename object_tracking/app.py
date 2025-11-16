@@ -1,104 +1,183 @@
-# object_tracking/app.py
 import streamlit as st
 import cv2
 import numpy as np
 import yt_dlp
+import os
+import tempfile
+from pathlib import Path
 from ultralytics import YOLO
-from .tracker import EuclideanDistTracker
-from .reporter import TrafficReporter
 import time
+import matplotlib.pyplot as plt
+from collections import deque
 
-# Carregar modelo uma vez
+# ✅ PRIMEIRA CHAMADA STREAMLIT — OBRIGATÓRIO
+st.set_page_config(page_title="Rastreamento de Veículos", layout="wide")
+
+# =============== CSS PERSONALIZADO ===============
+st.markdown("""
+<style>
+    .main { background-color: #f5f7fa; }
+    .video-container {
+        background: white;
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .graph-container {
+        background: white;
+        border-radius: 12px;
+        padding: 15px;
+        margin-top: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .status-box {
+        background: #e6f4ea;
+        border-left: 4px solid #34a853;
+        padding: 12px;
+        border-radius: 0 8px 8px 0;
+        margin: 15px 0;
+    }
+    .stButton>button {
+        background-color: #1a73e8;
+        color: white;
+        border-radius: 8px;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =============== CONTADOR POR ID ÚNICO ===============
+class UniqueVehicleCounter:
+    def __init__(self):
+        self.seen_ids = set()
+        self.timeline = []  # [(timestamp, count)]
+
+    def add_new_ids(self, current_ids):
+        new_ids = [vid for vid in current_ids if vid not in self.seen_ids]
+        for vid in new_ids:
+            self.seen_ids.add(vid)
+        if new_ids:
+            self.timeline.append((time.time(), len(new_ids)))
+        return len(new_ids), len(self.seen_ids)
+
+    def get_cumulative_data(self):
+        if not self.timeline:
+            return [], []
+        times = [t for t, c in self.timeline]
+        counts = np.cumsum([c for t, c in self.timeline])
+        return times, counts
+
+# =============== FUNÇÕES ===============
 @st.cache_resource
 def load_model():
     return YOLO("yolov8n.pt")
 
-def get_youtube_stream_url(youtube_url):
-    ydl_opts = {
-        'quiet': True,
-        'format': 'best[height<=720]/best',
-        'noplaylist': True
-    }
+def download_youtube_video(url, output_path):
+    ydl_opts = {'format': 'best[height<=720][ext=mp4]', 'outtmpl': output_path, 'quiet': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
-        return info['url']
+        ydl.download([url])
 
-st.set_page_config(page_title="Rastreamento de Veículos ao Vivo", layout="wide")
-st.title("🚦 Rastreamento de Veículos em Lives do YouTube (YOLOv8 + Streamlit)")
+# =============== TÍTULO ===============
+st.title("🚨 Rastreamento Simples de Veículos")
+st.markdown("Detecta **qualquer veículo** e conta por **ID único** (não por frame).")
 
-# Sidebar
-st.sidebar.header("Configurações")
-youtube_url = st.sidebar.text_input("URL da Live do YouTube", value="")
-frame_skip = st.sidebar.slider("Pular frames (para melhorar FPS)", 0, 10, 2)
+# =============== SIDEBAR ===============
+st.sidebar.header("📥 Fonte do Vídeo")
+source_type = st.sidebar.radio("Escolha a fonte:", ("Upload de Vídeo", "Link do YouTube"))
 
-if not youtube_url:
-    st.info("Cole o link de uma live do YouTube (ex: câmera de rodovia) para começar.")
-    st.stop()
+video_path = None
 
-try:
-    stream_url = get_youtube_stream_url(youtube_url)
-except Exception as e:
-    st.error(f"Erro ao carregar live: {e}")
-    st.stop()
+if source_type == "Upload de Vídeo":
+    uploaded_file = st.sidebar.file_uploader("Selecione um vídeo", type=["mp4", "avi", "mov", "mpeg4"])
+    if uploaded_file is not None:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
+            tmp.write(uploaded_file.read())
+            video_path = tmp.name
+else:
+    youtube_url = st.sidebar.text_input("Cole o link do YouTube")
+    if st.sidebar.button("🔽 Baixar e Processar"):
+        if youtube_url.strip():
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+                try:
+                    download_youtube_video(youtube_url, tmp.name)
+                    video_path = tmp.name
+                    st.sidebar.success("✅ Vídeo baixado com sucesso!")
+                except Exception as e:
+                    st.sidebar.error(f"❌ Erro ao baixar: {e}")
+        else:
+            st.sidebar.warning("Por favor, insira um link válido.")
 
-# Inicializar componentes
-model = load_model()
-tracker = EuclideanDistTracker()
-reporter = TrafficReporter()
-cap = cv2.VideoCapture(stream_url)
+frame_skip = st.sidebar.slider("⏩ Pular frames (para mais FPS)", 0, 10, 2)
 
-# Containers para UI
-video_placeholder = st.empty()
-report_placeholder = st.sidebar.empty()
-download_placeholder = st.sidebar.empty()
+# =============== LAYOUT ===============
+col1, col2 = st.columns([2, 1])
+video_placeholder = col1.empty()
+graph_placeholder = col2.empty()
+status_placeholder = st.empty()
 
-frame_count = 0
-last_report_time = time.time()
+# =============== PROCESSAMENTO ===============
+if video_path and os.path.exists(video_path):
+    cap = cv2.VideoCapture(video_path)
+    model = load_model()
+    counter = UniqueVehicleCounter()
+    last_graph_update = time.time()
 
-try:
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            st.warning("Fim do stream ou erro na conexão.")
-            break
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        frame_count += 1
-        if frame_skip > 0 and frame_count % (frame_skip + 1) != 0:
-            continue
+            current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+            if frame_skip > 0 and current_frame % (frame_skip + 1) != 0:
+                continue
 
-        # Detecção com YOLO (apenas carros, caminhões, ônibus)
-        results = model(frame, classes=[2, 3, 5, 7], verbose=False)  # COCO: car=2, motorcycle=3, bus=5, truck=7
-        detections = []
-        for box in results[0].boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            detections.append([x1, y1, x2, y2])
+            # Detectar veículos com tracking
+            results = model.track(frame, classes=[2, 3, 5, 7], persist=True, verbose=False)
+            current_ids = set()
 
-        # Rastreamento
-        tracked_objects = tracker.update(detections, frame_count)
-        vehicle_count = len(tracked_objects)
+            if results[0].boxes.id is not None:
+                boxes = results[0].boxes
+                for box, obj_id in zip(boxes.xyxy, boxes.id):
+                    x1, y1, x2, y2 = map(int, box)
+                    track_id = int(obj_id)
+                    current_ids.add(track_id)
+                    # Desenha bounding box e ID
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        # Atualizar relatório
-        reporter.add_frame_detections(vehicle_count)
+            new_count, total_unique = counter.add_new_ids(current_ids)
 
-        # Desenhar bounding boxes e IDs
-        for (cx, cy, obj_id) in tracked_objects:
-            cv2.putText(frame, f"ID {obj_id}", (cx - 20, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+            # Mostrar vídeo
+            video_placeholder.image(frame, channels="BGR")
 
-        # Mostrar frame
-        video_placeholder.image(frame, channels="BGR", use_container_width=True)
+            # Atualizar gráfico a cada 5s
+            if time.time() - last_graph_update > 5:
+                times, counts = counter.get_cumulative_data()
+                if times:
+                    fig, ax = plt.subplots(figsize=(5, 3.5))
+                    ax.plot(times, counts, color='#1a73e8', marker='o', linewidth=2, markersize=4)
+                    ax.set_title("Veículos Únicos Detectados (Acumulado)", fontsize=10)
+                    ax.set_xlabel("Tempo (s)", fontsize=9)
+                    ax.set_ylabel("Total", fontsize=9)
+                    ax.grid(True, linestyle='--', alpha=0.6)
+                    graph_placeholder.markdown('<div class="graph-container">', unsafe_allow_html=True)
+                    graph_placeholder.pyplot(fig)
+                last_graph_update = time.time()
 
-        # Atualizar relatório a cada 5 segundos
-        if time.time() - last_report_time > 5:
-            report = reporter.get_report()
-            report_placeholder.json(report)
-            last_report_time = time.time()
+            # Atualizar status
+            status_placeholder.markdown(f"""
+            <div class="status-box">
+                <b>Veículos únicos detectados:</b> {total_unique}<br>
+                <b>Novos neste ciclo:</b> {new_count}
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Botão de download
-        csv_file = reporter.export_to_csv()
-        if csv_file:
-            with open(csv_file, "rb") as f:
-                download_placeholder.download_button("📥 Baixar Relatório CSV", f, file_name=csv_file, mime="text/csv")
+        cap.release()
+        st.success("✅ Processamento concluído!")
 
-finally:
-    cap.release()
+    except Exception as e:
+        st.error(f"Erro durante o processamento: {e}")
+
+else:
+    st.info("👉 Faça upload de um vídeo ou insira um link do YouTube para começar.")
