@@ -17,14 +17,29 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QRadioButton, QLineEdit, QSlider,
-    QFileDialog, QGroupBox, QMessageBox,
+    QFileDialog, QGroupBox, QMessageBox, QProgressBar,
     QSizePolicy  # <--- IMPORTANTE: Importar QSizePolicy
 )
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QColor
 
 # Importa componentes do Matplotlib para integração com Qt
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+# Dicionário de classes para mapear os IDs do YOLO para nomes
+VEHICLE_CLASSES = {
+    2: 'Carro', 
+    3: 'Moto', 
+    5: 'Ônibus/Caminhão', # Usando esta classe para ambos, conforme o YOLOv8n padrão 
+    7: 'Trem/Caminhão'
+}
+# Agrupando classes em categorias simples para o cálculo de percentual
+SIMPLE_VEHICLE_MAP = {
+    2: 'Carro',
+    3: 'Moto',
+    5: 'Caminhão',
+    7: 'Caminhão',
+}
 
 # =============== CONTADOR POR ID ÚNICO (Idêntico ao seu) ===============
 class UniqueVehicleCounter:
@@ -62,11 +77,13 @@ def download_youtube_video(url, output_path):
 # =============== WORKER DE VÍDEO (Lógica de Processamento) ===============
 class VideoWorker(QObject):
     # Sinais (Signals) para enviar dados de volta para a GUI
-    frame_ready = Signal(np.ndarray)      # Envia o frame (imagem)
-    stats_updated = Signal(int, int)    # Envia (total_unico, novo_ciclo)
-    graph_data_ready = Signal(object, object) # Envia (tempos, contagens)
-    processing_finished = Signal()      # Avisa que terminou
-    error_occurred = Signal(str)        # Envia uma mensagem de erro
+    frame_ready = Signal(np.ndarray)      
+    stats_updated = Signal(int, int)    
+    graph_data_ready = Signal(object, object) 
+    processing_finished = Signal()      
+    error_occurred = Signal(str)        
+    # NOVO SINAL: Envia a contagem de cada classe detectada no frame atual
+    vehicle_percentages = Signal(dict)
 
     def __init__(self, video_path, source_type, youtube_url, frame_skip):
         super().__init__()
@@ -94,6 +111,8 @@ class VideoWorker(QObject):
             cap = cv2.VideoCapture(video_path)
             counter = UniqueVehicleCounter()
             last_graph_update = time.time()
+            # IDs de classes que queremos rastrear (carros, motos, caminhões/ônibus)
+            yolo_classes_to_track = [2, 3, 5, 7] 
 
             while cap.isOpened() and self._is_running:
                 ret, frame = cap.read()
@@ -104,23 +123,50 @@ class VideoWorker(QObject):
                 if self.frame_skip > 0 and current_frame % (self.frame_skip + 1) != 0:
                     continue
 
-                results = model.track(frame, classes=[2, 3, 5, 7], persist=True, verbose=False)
+                # Rastreamento e detecção
+                results = model.track(frame, classes=yolo_classes_to_track, persist=True, verbose=False)
+                
                 current_ids = set()
+                # NOVO: Contador de classes no frame
+                frame_class_counts = {'Carro': 0, 'Moto': 0, 'Caminhão': 0}
 
                 if results[0].boxes.id is not None:
                     boxes = results[0].boxes
-                    for box, obj_id in zip(boxes.xyxy, boxes.id):
+                    classes = results[0].boxes.cls.tolist()
+
+                    for box, obj_id, cls_id in zip(boxes.xyxy, boxes.id, classes):
                         x1, y1, x2, y2 = map(int, box)
                         track_id = int(obj_id)
                         current_ids.add(track_id)
+                        
+                        # Atualiza a contagem de classes
+                        simple_class = SIMPLE_VEHICLE_MAP.get(int(cls_id))
+                        if simple_class in frame_class_counts:
+                            frame_class_counts[simple_class] += 1
+
+                        # Desenha a caixa delimitadora e o ID
+                        class_name = VEHICLE_CLASSES.get(int(cls_id), 'Veículo')
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        cv2.putText(frame, f"ID {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        cv2.putText(frame, f"ID {track_id} ({class_name})", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
                 new_count, total_unique = counter.add_new_ids(current_ids)
+                
+                # Cálculo do percentual para o Status Bar
+                total_vehicles_in_frame = sum(frame_class_counts.values())
+                percent_data = {}
+                if total_vehicles_in_frame > 0:
+                    for key, count in frame_class_counts.items():
+                        percent_data[key] = int((count / total_vehicles_in_frame) * 100)
+                else:
+                     percent_data = {'Carro': 0, 'Moto': 0, 'Caminhão': 0}
 
+
+                # Emite os sinais
                 self.frame_ready.emit(frame)
                 self.stats_updated.emit(total_unique, new_count)
-
+                self.vehicle_percentages.emit(percent_data) # NOVO: Envia os percentuais
+                
+                # Atualiza o gráfico a cada 5 segundos
                 if time.time() - last_graph_update > 5:
                     times, counts = counter.get_cumulative_data()
                     if len(times) > 0:
@@ -142,7 +188,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Rastreamento de Veículos (PySide6)")
-        self.setGeometry(100, 100, 1200, 700)
+        self.setGeometry(100, 100, 1400, 800) # Aumentando o tamanho padrão
         
         self.video_path = None
         self.worker_thread = None
@@ -150,6 +196,21 @@ class MainWindow(QMainWindow):
 
         self.init_ui()
         self.apply_stylesheet()
+
+    def create_progress_bar(self, label, object_name):
+        """Cria e retorna um layout com QLabel e QProgressBar."""
+        h_layout = QHBoxLayout()
+        progress_label = QLabel(label)
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setTextVisible(True)
+        progress_bar.setObjectName(object_name) # Para estilizar via CSS
+
+        h_layout.addWidget(progress_label, 1)
+        h_layout.addWidget(progress_bar, 4)
+        
+        return h_layout, progress_bar
+
 
     def init_ui(self):
         main_layout = QHBoxLayout()
@@ -162,7 +223,9 @@ class MainWindow(QMainWindow):
         self.title_label = QLabel("🚨 Rastreamento de Veículos")
         self.title_label.setObjectName("TitleLabel")
         sidebar_layout.addWidget(self.title_label)
+        sidebar_layout.addSpacing(10)
 
+        # Controles de Fonte
         source_group = QGroupBox("📥 Fonte do Vídeo")
         source_layout = QVBoxLayout()
         self.radio_upload = QRadioButton("Upload de Vídeo")
@@ -212,16 +275,8 @@ class MainWindow(QMainWindow):
         
         # Coluna do Vídeo
         self.video_label = QLabel("Faça upload de um vídeo ou insira um link para começar.")
-        
-        # =================================================================
-        # CORREÇÃO DEFINITIVA:
-        # 1. Mantém o scale automático (correção anterior)
         self.video_label.setScaledContents(True)
-        
-        # 2. Força o QLabel a IGNORAR o tamanho do vídeo e obedecer o layout
         self.video_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        # =================================================================
-        
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setObjectName("VideoContainer")
         top_content_layout.addWidget(self.video_label, 2) # Ocupa 2/3 do espaço
@@ -237,17 +292,37 @@ class MainWindow(QMainWindow):
         self.graph_container.setLayout(graph_layout)
         
         top_content_layout.addWidget(self.graph_container, 1) # Ocupa 1/3 do espaço
-        content_layout.addLayout(top_content_layout)
+        content_layout.addLayout(top_content_layout, 3) # Ocupa 3 partes da altura
+
+        # NOVO: Stats Bar Container (Inferior)
+        stats_bar_group = QGroupBox("📊 Distribuição de Veículos (Frame Atual)")
+        stats_bar_group.setObjectName("StatsBarContainer")
+        stats_bar_layout = QVBoxLayout()
         
-        # Status Box (Inferior)
+        # Carro
+        car_layout, self.bar_car = self.create_progress_bar("Carro:", "CarBar")
+        stats_bar_layout.addLayout(car_layout)
+
+        # Caminhão
+        truck_layout, self.bar_truck = self.create_progress_bar("Caminhão:", "TruckBar")
+        stats_bar_layout.addLayout(truck_layout)
+
+        # Moto
+        motorcycle_layout, self.bar_motorcycle = self.create_progress_bar("Moto:", "MotorcycleBar")
+        stats_bar_layout.addLayout(motorcycle_layout)
+
+        stats_bar_group.setLayout(stats_bar_layout)
+        content_layout.addWidget(stats_bar_group, 1) # Ocupa 1 parte da altura
+        
+        # Status Box (Inferior, Abaixo das Barras)
         self.status_label = QLabel("<b>Status:</b> Aguardando...")
         self.status_label.setObjectName("StatusBox")
         self.status_label.setMargin(10)
-        content_layout.addWidget(self.status_label)
+        content_layout.addWidget(self.status_label, 0) # Altura mínima
 
         # --- Montagem Final ---
-        main_layout.addWidget(sidebar_widget, 1) 
-        main_layout.addLayout(content_layout, 3)   
+        main_layout.addWidget(sidebar_widget, 1) # Sidebar: 1/4
+        main_layout.addLayout(content_layout, 3) # Conteúdo: 3/4
 
         central_widget = QWidget()
         central_widget.setLayout(main_layout)
@@ -269,16 +344,24 @@ class MainWindow(QMainWindow):
                 color: #333;
             }
             #VideoContainer {
-                background: white;
+                background: #2c2f33; /* Fundo escuro para destacar o vídeo */
                 border-radius: 12px;
                 padding: 10px;
-                border: 1px solid #eee;
+                border: 1px solid #444;
+                color: white;
             }
             #GraphContainer {
                 background: white;
                 border-radius: 12px;
                 padding: 10px;
                 border: 1px solid #eee;
+            }
+            #StatsBarContainer {
+                background: #fff;
+                border-radius: 8px;
+                padding: 10px;
+                border: 1px solid #ddd;
+                font-size: 14px;
             }
             #StatusBox {
                 background: #e6f4ea;
@@ -308,6 +391,22 @@ class MainWindow(QMainWindow):
             QGroupBox {
                 font-weight: bold;
             }
+            
+            /* Estilizando as Progress Bars */
+            QProgressBar {
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                text-align: center;
+                height: 20px;
+                background-color: #f0f0f0;
+            }
+            QProgressBar::chunk {
+                border-radius: 5px;
+            }
+            
+            #CarBar::chunk { background-color: #34a853; } /* Verde */
+            #TruckBar::chunk { background-color: #fbbc04; } /* Amarelo */
+            #MotorcycleBar::chunk { background-color: #ea4335; } /* Vermelho */
         """)
 
     @Slot()
@@ -339,8 +438,8 @@ class MainWindow(QMainWindow):
         youtube_url = self.youtube_input.text().strip()
         frame_skip = self.frame_skip_slider.value()
 
-        if source_type == "Upload" and not self.video_path:
-            QMessageBox.critical(self, "Erro", "Selecione um arquivo de vídeo primeiro.")
+        if source_type == "Upload" and (not self.video_path or not os.path.exists(self.video_path)):
+            QMessageBox.critical(self, "Erro", "Selecione um arquivo de vídeo válido primeiro.")
             return
         if source_type == "YouTube" and not youtube_url:
             QMessageBox.critical(self, "Erro", "Insira um link do YouTube válido.")
@@ -363,6 +462,7 @@ class MainWindow(QMainWindow):
         self.video_worker.frame_ready.connect(self.update_video_frame)
         self.video_worker.stats_updated.connect(self.update_stats)
         self.video_worker.graph_data_ready.connect(self.update_graph)
+        self.video_worker.vehicle_percentages.connect(self.update_vehicle_percentages) # CONECTA NOVO SINAL
         self.video_worker.processing_finished.connect(self.processing_finished)
         self.video_worker.error_occurred.connect(self.processing_error)
 
@@ -378,7 +478,6 @@ class MainWindow(QMainWindow):
         q_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         
         # Apenas seta o Pixmap. O scaling agora é 100% automático
-        # graças às propriedades setadas no init_ui
         self.video_label.setPixmap(QPixmap.fromImage(q_image))
 
     @Slot(int, int)
@@ -400,6 +499,23 @@ class MainWindow(QMainWindow):
             self.fig.tight_layout()
             self.graph_canvas.draw() 
 
+    @Slot(dict)
+    def update_vehicle_percentages(self, percentages):
+        """Atualiza as barras de progresso com os percentuais do frame."""
+        car_p = percentages.get('Carro', 0)
+        truck_p = percentages.get('Caminhão', 0)
+        motorcycle_p = percentages.get('Moto', 0)
+
+        self.bar_car.setValue(car_p)
+        self.bar_car.setFormat(f"Carro: {car_p}%")
+
+        self.bar_truck.setValue(truck_p)
+        self.bar_truck.setFormat(f"Caminhão: {truck_p}%")
+
+        self.bar_motorcycle.setValue(motorcycle_p)
+        self.bar_motorcycle.setFormat(f"Moto: {motorcycle_p}%")
+
+
     @Slot()
     def processing_finished(self):
         self.status_label.setText("<b>Status:</b> Processamento concluído!")
@@ -417,6 +533,9 @@ class MainWindow(QMainWindow):
     
     def cleanup_thread(self):
         if self.worker_thread is not None:
+            # Garante que o worker pare de processar antes de encerrar
+            if self.video_worker:
+                self.video_worker.stop()
             self.worker_thread.quit()
             self.worker_thread.wait()
         self.worker_thread = None
