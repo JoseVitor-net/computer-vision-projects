@@ -13,10 +13,10 @@ jobs:
 
     steps:
     - name: Checkout código
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Configurar Python 3.10
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
@@ -35,7 +35,7 @@ jobs:
         pyinstaller --onefile --windowed --name VehicleTrackerPro --add-data "yolov8n.pt;." app_pyside_pyqtgraph_SIMPLIFICADO.py
 
     - name: Upload do executável
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: VehicleTrackerPro-Windows
         path: dist/VehicleTrackerPro.exe
