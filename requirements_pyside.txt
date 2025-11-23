@@ -1,11 +1,31 @@
-# requirements_pyside.txt
-PySide6==6.7.1
-streamlit==1.39.0
-opencv-python==4.10.0.84
-ultralytics==8.2.0
-yt-dlp==2024.10.22
-numpy==1.26.4
-pandas==2.2.2
-matplotlib==3.9.2
-torch==2.5.1
-torchvision==0.20.1
+# Vehicle Tracker Pro - Requirements
+# Versão atualizada para app_pyside_pyqtgraph_SIMPLIFICADO.py
+
+# ========== Core GUI ==========
+PySide6>=6.5.0                # Interface gráfica Qt6
+
+# ========== Computer Vision ==========
+opencv-python>=4.8.0          # OpenCV para processamento de imagem
+ultralytics>=8.0.0            # Framework YOLOv8
+
+# ========== Deep Learning ==========
+torch>=2.0.0                  # PyTorch (backend do YOLO)
+torchvision>=0.15.0          # Torchvision (dependência do YOLO)
+
+# ========== Streaming/Download ==========
+yt-dlp>=2023.10.0            # YouTube downloader/streamer (atualizado)
+
+# ========== Visualização ==========
+pyqtgraph>=0.13.0            # Gráficos interativos de alta performance
+
+# ========== Processamento de Dados ==========
+numpy>=1.24.0                 # Arrays e operações numéricas
+pandas>=2.0.0                 # Análise de dados (opcional, mas útil)
+
+# ========== Utilitários ==========
+pillow>=10.0.0                # Processamento de imagens
+pathlib2>=2.3.7              # Manipulação de caminhos (Python 3.4+)
+
+# ========== Build (opcional) ==========
+# Descomente se for gerar executável localmente
+# pyinstaller>=5.0.0          # Gerador de executável
