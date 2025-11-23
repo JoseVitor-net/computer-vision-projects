@@ -32,7 +32,7 @@ jobs:
 
     - name: Gerar executável Windows
       run: |
-        pyinstaller --onefile --windowed --name VehicleTrackerPro --add-data "yolov8n.pt;." app_pyside_pyqtgraph_SIMPLIFICADO.py
+        pyinstaller --onefile --windowed --name VehicleTrackerPro --add-data "yolov8n.pt;." app_pyside.py
 
     - name: Upload do executável
       uses: actions/upload-artifact@v4
