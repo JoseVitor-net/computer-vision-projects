@@ -125,17 +125,10 @@ Este projeto **aperfeiçoa significativamente** o exemplo base do Pysource, incl
 
 ```
 vehicle-tracker-pro/
-├── .github/
-│   └── workflows/
-│       └── build_windows.yml        # CI/CD para build Windows
-├── app_pyside_pyqtgraph_SIMPLIFICADO.py  # Aplicação principal
-├── requirements_pyqtgraph.txt        # Dependências do projeto
+├── app_pyside.py  # Aplicação principal
+├── requirements.txt        # Dependências do projeto
 ├── yolov8n.pt                        # Modelo YOLO (baixar separadamente)
-├── README.md                         # Este arquivo
-├── LICENSE                           # Licença MIT
-└── docs/
-    ├── screenshots/                  # Capturas de tela
-    └── demo.mp4                      # Vídeo demonstrativo
+├── README.md                         # Este arquivo 
 ```
 
 ---
@@ -172,7 +165,7 @@ venv\Scripts\activate
 
 ```bash
 pip install --upgrade pip
-pip install -r requirements_pyqtgraph.txt
+pip install -r requirements.txt
 ```
 
 ### Passo 4: Baixar Modelo YOLO
@@ -186,7 +179,7 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 ### Passo 5: Executar Aplicação
 
 ```bash
-python app_pyside_pyqtgraph_SIMPLIFICADO.py
+python app_pyside.py
 ```
 
 ---
@@ -264,23 +257,6 @@ Mapeamento inteligente de classes YOLO:
 - Auto-scale
 - Legenda interativa
 - Performance 10-100x superior ao Matplotlib
-
----
-
-## 🎬 Demonstração
-
-### Screenshots
-
-![Interface Principal](docs/screenshots/main_interface.png)
-*Interface principal com vídeo, estatísticas e gráficos*
-
-![Detecção em Ação](docs/screenshots/detection.png)
-*Sistema detectando e classificando veículos em tempo real*
-
-### Vídeo Demonstrativo
-
-🎥 [Assista no YouTube](LINK_DO_VIDEO)
-
 ---
 
 ## 🏗️ Arquitetura do Sistema
@@ -310,40 +286,6 @@ Mapeamento inteligente de classes YOLO:
 │  • Timeline de detecções                            │
 └─────────────────────────────────────────────────────┘
 ```
-
----
-
-## 📦 Gerar Executável Windows
-
-### Localmente (Windows)
-
-```bash
-# Instalar PyInstaller
-pip install pyinstaller
-
-# Gerar .exe
-pyinstaller --onefile --windowed \
-  --name VehicleTrackerPro \
-  --add-data "yolov8n.pt;." \
-  app_pyside_pyqtgraph_SIMPLIFICADO.py
-
-# Executável gerado em: dist/VehicleTrackerPro.exe
-```
-
-### Via GitHub Actions (Linux/Mac/Windows)
-
-O repositório já vem configurado com **CI/CD automático**:
-
-1. Faça push para o repositório
-2. Vá em: `Actions` → `Build Windows Executable`
-3. Aguarde ~5-10 minutos
-4. Baixe o `.exe` em Artifacts
-
-**Benefícios:**
-- ✅ Compila no Windows (na nuvem Microsoft)
-- ✅ Não precisa ter Windows localmente
-- ✅ Build automático a cada push
-- ✅ Gratuito (2000 min/mês)
 
 ---
 
@@ -392,25 +334,6 @@ pip install --upgrade yt-dlp
 ```bash
 python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 ```
-
----
-
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Para contribuir:
-
-1. Fork o projeto
-2. Crie uma branch (`git checkout -b feature/NovaFeature`)
-3. Commit suas mudanças (`git commit -m 'Add: Nova feature'`)
-4. Push para a branch (`git push origin feature/NovaFeature`)
-5. Abra um Pull Request
-
----
-
-## 📝 Licença
-
-Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](LICENSE) para detalhes.
-
 ---
 
 ## 🙏 Agradecimentos
@@ -423,12 +346,7 @@ Este projeto está licenciado sob a **MIT License** - veja o arquivo [LICENSE](L
 
 ---
 
-## 📞 Contato
-
-- 📧 Email: [seu.email@exemplo.com](mailto:seu.email@exemplo.com)
-- 🐙 GitHub: [@seu_usuario](https://github.com/seu_usuario)
-- 💼 LinkedIn: [Seu Nome](https://linkedin.com/in/seu-perfil)
-
+## 📞 Con
 ---
 
 ## 🔗 Links Úteis
