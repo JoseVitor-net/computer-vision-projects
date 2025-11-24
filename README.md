@@ -13,15 +13,12 @@
 ---
 
 ## 👥 Integrantes do Grupo
-
-| Nome | Matrícula | GitHub |
-|------|-----------|--------|
-| [Seu Nome] | [Matrícula] | [@usuario](https://github.com/usuario) |
-| [Nome 2] | [Matrícula] | [@usuario2](https://github.com/usuario2) |
-| [Nome 3] | [Matrícula] | [@usuario3](https://github.com/usuario3) |
-
----
-
+| Nome |
+|------|
+| [José Vitor] | [Matrícula: 20250042409] |
+| [Bruno Freitas] | [Matrícula: 20250031423] |
+| [Victor Rafael] | [Matrícula: 20250030800] |
+| [Allan Menezes]| [Matrícula: 20250031764] |
 ## 📋 Descrição do Projeto
 
 **Vehicle Tracker Pro** é um sistema profissional de rastreamento e contagem de veículos utilizando Visão Computacional. O projeto vai além do simples rastreamento de objetos, implementando:
