@@ -13,8 +13,8 @@
 ---
 
 ## 👥 Integrantes do Grupo
-| Nome |
-|------|
+| Nome | Matrícula |
+|------|-----------|
 | [José Vitor] | [Matrícula: 20250042409] |
 | [Bruno Freitas] | [Matrícula: 20250031423] |
 | [Victor Rafael] | [Matrícula: 20250030800] |
