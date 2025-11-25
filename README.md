@@ -354,11 +354,3 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 - [yt-dlp GitHub](https://github.com/yt-dlp/yt-dlp)
 
 ---
-
-<div align="center">
-
-**Desenvolvido com ❤️ para o curso de Visão Computacional**
-
-[![Star this repo](https://img.shields.io/github/stars/SEU_USUARIO/vehicle-tracker-pro?style=social)](https://github.com/SEU_USUARIO/vehicle-tracker-pro)
-
-</div>
