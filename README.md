@@ -342,9 +342,6 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
 
 ---
 
-## 📞 Con
----
-
 ## 🔗 Links Úteis
 
 - [Documentação OpenCV](https://docs.opencv.org/)
